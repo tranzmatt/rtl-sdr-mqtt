@@ -42,7 +42,6 @@
 
 /* MQTT Support */
 #ifdef HAVE_MQTT
-#warning WE HAVE MQTT
 #include <mosquitto.h>
 #endif
 
