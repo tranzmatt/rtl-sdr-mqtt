@@ -7,6 +7,7 @@ Build-Depends: cmake,
                libusb-1.0-0-dev [linux-any],
                libusb-dev [hurd-i386],
                libusb2-dev [kfreebsd-any],
+               libmosquitto-dev [linux-any],
 	       pkg-config
 Standards-Version: 4.1.4
 Homepage: http://sdr.osmocom.org/trac/wiki/rtl-sdr

@@ -8,6 +8,7 @@ export DEB_HOST_MULTIARCH
 override_dh_auto_configure: debian/librtlsdr0.udev
 	dh_auto_configure --buildsystem=cmake -- -DDETACH_KERNEL_DRIVER=ON \
 						 -DINSTALL_UDEV_RULES=ON \
+						 -DENABLE_MQTT=1 \
 						 -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
 debian/librtlsdr0.udev: rtl-sdr.rules

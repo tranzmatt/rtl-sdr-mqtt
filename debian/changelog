@@ -1,3 +1,10 @@
+rtl-sdr (2.0.3) unstable; urgency=medium
+
+  * Add MQTT support to rtl_adsb for publishing ADS-B data to MQTT brokers
+  * Enable automatic kernel driver detaching by default
+
+ -- Matthew Clark <linux.matthew@gmail.com>  Tue, 15 Apr 2025 10:00:00 +0000
+
 rtl-sdr (2.0.2) unstable; urgency=medium
 
   [ Mikael Falkvidd ]

@@ -34,6 +34,9 @@ if(NOT CMAKE_BUILD_TYPE)
    message(STATUS "Build type not specified: defaulting to release.")
 endif(NOT CMAKE_BUILD_TYPE)
 
+# Add path to libmosquitto pkgconfig
+set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/pkgconfig")
+
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
 include(GNUInstallDirs)
@@ -73,10 +76,9 @@ find_package(PkgConfig)
 option(ENABLE_MQTT "Enable MQTT support for rtl_adsb" OFF)
 
 if(ENABLE_MQTT)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(LIBMOSQUITTO mosquitto)
-    endif()
-    
+    # Try to find Mosquitto using our custom Find module
+    find_package(Mosquitto)
+
     if(LIBMOSQUITTO_FOUND)
         message(STATUS "MQTT support enabled for rtl_adsb")
         # Use this define in the code to conditionally include MQTT functionality
@@ -88,6 +90,7 @@ if(ENABLE_MQTT)
 else()
     message(STATUS "MQTT support disabled - use -DENABLE_MQTT=ON to enable")
 endif()
+
 
 if(PKG_CONFIG_FOUND)
     pkg_check_modules(LIBUSB libusb-1.0 IMPORTED_TARGET)
