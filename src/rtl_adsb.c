@@ -67,10 +67,13 @@
 #define BADSAMPLE    255
 
 #ifdef HAVE_MQTT
+#define MQTT_DEFAULT_HOST       "localhost"
 #define MQTT_DEFAULT_PORT       "1883"
 #define MQTT_DEFAULT_TOPIC      "adsb/raw"
 #define MQTT_DEFAULT_QOS        0
 #define MQTT_DEFAULT_KEEPALIVE  60
+#define MQTT_DEFAULT_TLS        0
+#define MQTT_DEFAULT_CA_CERT    0
 #endif
 
 static pthread_t demod_thread;
@@ -103,6 +106,7 @@ struct mqtt_config {
     char *password;
     char *topic;
     int use_tls;
+    int ca_cert;
     int qos;
     int keepalive;
 };
@@ -143,10 +147,11 @@ void usage(void)
         "\t[-M enable MQTT output]\n"
         "\t[-H mqtt_host (default: localhost or MQTT_HOST env var)]\n"
         "\t[-P mqtt_port (default: 1883 or MQTT_PORT env var)]\n"
-        "\t[-U mqtt_username (default: none or MQTT_USERNAME env var)]\n"
+        "\t[-U mqtt_username (default: none or MQTT_USER env var)]\n"
         "\t[-W mqtt_password (default: none or MQTT_PASSWORD env var)]\n"
         "\t[-O mqtt_topic (default: adsb/raw or MQTT_TOPIC env var)]\n"
         "\t[-L enable TLS for MQTT connection (default: off or MQTT_TLS env var)]\n"
+        "\t[-C check CA CERT for MQTT connection (default: off or MQTT_CA_CERT env var)]\n"
 #endif
 		"\tfilename (a '-' dumps samples to stdout)\n"
 		"\t (omitting the filename also uses stdout)\n\n"
@@ -512,7 +517,7 @@ void init_mqtt_config(void) {
         mqtt.port = get_env_or_default("MQTT_PORT", MQTT_DEFAULT_PORT);
     
     if (!mqtt.username)
-        mqtt.username = get_env_or_default("MQTT_USERNAME", NULL);
+        mqtt.username = get_env_or_default("MQTT_USER", NULL);
     
     if (!mqtt.password)
         mqtt.password = get_env_or_default("MQTT_PASSWORD", NULL);
@@ -525,6 +530,13 @@ void init_mqtt_config(void) {
         if (tls_env && (strcmp(tls_env, "1") == 0 || strcasecmp(tls_env, "true") == 0 || 
                         strcasecmp(tls_env, "yes") == 0))
             mqtt.use_tls = 1;
+    }
+
+    if (!mqtt.ca_cert) {
+        char *ca_cert = getenv("MQTT_CA_CERT");
+        if (ca_cert && (strcmp(ca_cert, "1") == 0 || strcasecmp(ca_cert, "true") == 0 || 
+                        strcasecmp(ca_cert, "yes") == 0))
+            mqtt.ca_cert= 1;
     }
     
     // Set other defaults
@@ -618,6 +630,9 @@ int main(int argc, char **argv)
             break;
         case 'L':
             mqtt.use_tls = 1;
+            break;
+        case 'C':
+            mqtt.ca_cert = 1;
             break;
 #endif
 		default:
