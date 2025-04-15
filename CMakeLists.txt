@@ -69,6 +69,26 @@ endif()
 find_package(Threads)
 find_package(PkgConfig)
 
+# Find Mosquitto MQTT library (for rtl_adsb)
+option(ENABLE_MQTT "Enable MQTT support for rtl_adsb" OFF)
+
+if(ENABLE_MQTT)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBMOSQUITTO mosquitto)
+    endif()
+    
+    if(LIBMOSQUITTO_FOUND)
+        message(STATUS "MQTT support enabled for rtl_adsb")
+        # Use this define in the code to conditionally include MQTT functionality
+        add_definitions(-DHAVE_MQTT)
+    else()
+        message(STATUS "MQTT support requested but libmosquitto not found - MQTT support will be disabled")
+        set(ENABLE_MQTT OFF)
+    endif()
+else()
+    message(STATUS "MQTT support disabled - use -DENABLE_MQTT=ON to enable")
+endif()
+
 if(PKG_CONFIG_FOUND)
     pkg_check_modules(LIBUSB libusb-1.0 IMPORTED_TARGET)
     if(LIBUSB_LINK_LIBRARIES)

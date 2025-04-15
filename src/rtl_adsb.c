@@ -40,6 +40,12 @@
 #include <pthread.h>
 #include <libusb.h>
 
+/* MQTT Support */
+#ifdef HAVE_MQTT
+#warning WE HAVE MQTT
+#include <mosquitto.h>
+#endif
+
 #include "rtl-sdr.h"
 #include "convenience/convenience.h"
 
@@ -59,6 +65,13 @@
 #define MESSAGEGO    253
 #define OVERWRITE    254
 #define BADSAMPLE    255
+
+#ifdef HAVE_MQTT
+#define MQTT_DEFAULT_PORT       "1883"
+#define MQTT_DEFAULT_TOPIC      "adsb/raw"
+#define MQTT_DEFAULT_QOS        0
+#define MQTT_DEFAULT_KEEPALIVE  60
+#endif
 
 static pthread_t demod_thread;
 static pthread_cond_t ready;
@@ -80,9 +93,38 @@ int adsb_frame[14];
 #define long_frame		112
 #define short_frame		56
 
+/* MQTT related variables */
+#ifdef HAVE_MQTT
+struct mqtt_config {
+    int enabled;
+    char *host;
+    char *port;
+    char *username;
+    char *password;
+    char *topic;
+    int use_tls;
+    int qos;
+    int keepalive;
+};
+
+static struct mqtt_config mqtt = {0};
+static struct mosquitto *mosq = NULL;
+#endif
+
 /* signals are not threadsafe by default */
 #define safe_cond_signal(n, m) pthread_mutex_lock(m); pthread_cond_signal(n); pthread_mutex_unlock(m)
 #define safe_cond_wait(n, m) pthread_mutex_lock(m); pthread_cond_wait(n, m); pthread_mutex_unlock(m)
+
+#ifdef HAVE_MQTT
+void mqtt_cleanup(void) {
+    if (mosq) {
+        mosquitto_disconnect(mosq);
+        mosquitto_destroy(mosq);
+        mosq = NULL;
+    }
+    mosquitto_lib_cleanup();
+}
+#endif
 
 void usage(void)
 {
@@ -97,6 +139,15 @@ void usage(void)
 		"\t[-g tuner_gain (default: automatic)]\n"
 		"\t[-p ppm_error (default: 0)]\n"
 		"\t[-T enable bias-T on GPIO PIN 0 (works for rtl-sdr.com v3 dongles)]\n"
+#ifdef HAVE_MQTT
+        "\t[-M enable MQTT output]\n"
+        "\t[-H mqtt_host (default: localhost or MQTT_HOST env var)]\n"
+        "\t[-P mqtt_port (default: 1883 or MQTT_PORT env var)]\n"
+        "\t[-U mqtt_username (default: none or MQTT_USERNAME env var)]\n"
+        "\t[-W mqtt_password (default: none or MQTT_PASSWORD env var)]\n"
+        "\t[-O mqtt_topic (default: adsb/raw or MQTT_TOPIC env var)]\n"
+        "\t[-L enable TLS for MQTT connection (default: off or MQTT_TLS env var)]\n"
+#endif
 		"\tfilename (a '-' dumps samples to stdout)\n"
 		"\t (omitting the filename also uses stdout)\n\n"
 		"Streaming with netcat:\n"
@@ -130,6 +181,18 @@ static void sighandler(int signum)
 }
 #endif
 
+#ifdef HAVE_MQTT
+void mqtt_publish_message(const char *message) {
+    if (!mqtt.enabled || !mosq)
+        return;
+    
+    int result = mosquitto_publish(mosq, NULL, mqtt.topic, strlen(message), message, mqtt.qos, false);
+    if (result != MOSQ_ERR_SUCCESS) {
+        fprintf(stderr, "MQTT publish failed: %s\n", mosquitto_strerror(result));
+    }
+}
+#endif
+
 void display(int *frame, int len)
 {
 	int i, df;
@@ -138,10 +201,25 @@ void display(int *frame, int len)
 	df = (frame[0] >> 3) & 0x1f;
 	if (quality == 0 && !(df==11 || df==17 || df==18 || df==19)) {
 		return;}
-	fprintf(file, "*");
+    
+    // Build the message output
+    char adsb_msg[128] = "*";
+    char *ptr = adsb_msg + 1;  // Start after the '*'
 	for (i=0; i<((len+7)/8); i++) {
-		fprintf(file, "%02x", frame[i]);}
-	fprintf(file, ";\r\n");
+		ptr += sprintf(ptr, "%02x", frame[i]);
+    }
+    strcat(ptr, ";\r\n");
+    
+    // Output to file
+	fprintf(file, "%s", adsb_msg);
+    
+    // Publish to MQTT if enabled
+#ifdef HAVE_MQTT
+    if (mqtt.enabled) {
+        mqtt_publish_message(adsb_msg);
+    }
+#endif
+    
 	if (!verbose_output) {
 		return;}
 	fprintf(file, "DF=%i CA=%i\n", df, frame[0] & 0x07);
@@ -362,6 +440,110 @@ static void *demod_thread_fn(void *arg)
 	return 0;
 }
 
+#ifdef HAVE_MQTT
+int init_mqtt(void) {
+    if (!mqtt.enabled)
+        return 0;
+
+    mosquitto_lib_init();
+
+    // Create a new client instance
+    mosq = mosquitto_new(NULL, true, NULL);
+    if (!mosq) {
+        fprintf(stderr, "Error: Out of memory when creating MQTT client.\n");
+        return -1;
+    }
+
+    // Set username and password if provided
+    if (mqtt.username && mqtt.password) {
+        if (mosquitto_username_pw_set(mosq, mqtt.username, mqtt.password) != MOSQ_ERR_SUCCESS) {
+            fprintf(stderr, "Error setting MQTT username and password\n");
+            mqtt_cleanup();
+            return -1;
+        }
+    }
+
+    // Set TLS if requested
+    if (mqtt.use_tls) {
+        if (mosquitto_tls_set(mosq, NULL, NULL, NULL, NULL, NULL) != MOSQ_ERR_SUCCESS) {
+            fprintf(stderr, "Error setting MQTT TLS\n");
+            mqtt_cleanup();
+            return -1;
+        }
+    }
+
+    // Connect to the broker
+    int result = mosquitto_connect(mosq, mqtt.host, atoi(mqtt.port), mqtt.keepalive);
+    if (result != MOSQ_ERR_SUCCESS) {
+        fprintf(stderr, "Error connecting to MQTT broker %s:%s: %s\n", 
+                mqtt.host, mqtt.port, mosquitto_strerror(result));
+        mqtt_cleanup();
+        return -1;
+    }
+
+    // Start the MQTT client loop in a background thread
+    result = mosquitto_loop_start(mosq);
+    if (result != MOSQ_ERR_SUCCESS) {
+        fprintf(stderr, "Error starting MQTT loop: %s\n", mosquitto_strerror(result));
+        mqtt_cleanup();
+        return -1;
+    }
+
+    fprintf(stderr, "MQTT client connected to %s:%s, topic: %s\n", 
+            mqtt.host, mqtt.port, mqtt.topic);
+    return 0;
+}
+
+char *get_env_or_default(const char *env_var, const char *default_val) {
+    char *value = getenv(env_var);
+    if (value)
+        return strdup(value);
+    if (default_val)
+        return strdup(default_val);
+    return NULL;
+}
+
+void init_mqtt_config(void) {
+    // Set defaults from environment variables if available
+    if (!mqtt.host)
+        mqtt.host = get_env_or_default("MQTT_HOST", "localhost");
+    
+    if (!mqtt.port)
+        mqtt.port = get_env_or_default("MQTT_PORT", MQTT_DEFAULT_PORT);
+    
+    if (!mqtt.username)
+        mqtt.username = get_env_or_default("MQTT_USERNAME", NULL);
+    
+    if (!mqtt.password)
+        mqtt.password = get_env_or_default("MQTT_PASSWORD", NULL);
+    
+    if (!mqtt.topic)
+        mqtt.topic = get_env_or_default("MQTT_TOPIC", MQTT_DEFAULT_TOPIC);
+    
+    if (!mqtt.use_tls) {
+        char *tls_env = getenv("MQTT_TLS");
+        if (tls_env && (strcmp(tls_env, "1") == 0 || strcasecmp(tls_env, "true") == 0 || 
+                        strcasecmp(tls_env, "yes") == 0))
+            mqtt.use_tls = 1;
+    }
+    
+    // Set other defaults
+    if (mqtt.qos == 0)
+        mqtt.qos = MQTT_DEFAULT_QOS;
+    
+    if (mqtt.keepalive == 0)
+        mqtt.keepalive = MQTT_DEFAULT_KEEPALIVE;
+}
+
+void cleanup_mqtt_config(void) {
+    if (mqtt.host) free(mqtt.host);
+    if (mqtt.port) free(mqtt.port);
+    if (mqtt.username) free(mqtt.username);
+    if (mqtt.password) free(mqtt.password);
+    if (mqtt.topic) free(mqtt.topic);
+}
+#endif
+
 int main(int argc, char **argv)
 {
 #ifndef _WIN32
@@ -378,7 +560,11 @@ int main(int argc, char **argv)
 	pthread_mutex_init(&ready_m, NULL);
 	squares_precompute();
 
+#ifdef HAVE_MQTT
+	while ((opt = getopt(argc, argv, "d:g:p:e:Q:VSTMH:P:U:W:O:L")) != -1)
+#else
 	while ((opt = getopt(argc, argv, "d:g:p:e:Q:VST")) != -1)
+#endif
 	{
 		switch (opt) {
 		case 'd':
@@ -406,6 +592,34 @@ int main(int argc, char **argv)
 		case 'T':
 			enable_biastee = 1;
 			break;
+#ifdef HAVE_MQTT
+        case 'M':
+            mqtt.enabled = 1;
+            break;
+        case 'H':
+            if (mqtt.host) free(mqtt.host);
+            mqtt.host = strdup(optarg);
+            break;
+        case 'P':
+            if (mqtt.port) free(mqtt.port);
+            mqtt.port = strdup(optarg);
+            break;
+        case 'U':
+            if (mqtt.username) free(mqtt.username);
+            mqtt.username = strdup(optarg);
+            break;
+        case 'W':
+            if (mqtt.password) free(mqtt.password);
+            mqtt.password = strdup(optarg);
+            break;
+        case 'O':
+            if (mqtt.topic) free(mqtt.topic);
+            mqtt.topic = strdup(optarg);
+            break;
+        case 'L':
+            mqtt.use_tls = 1;
+            break;
+#endif
 		default:
 			usage();
 			return 0;
@@ -443,6 +657,17 @@ int main(int argc, char **argv)
 	sigaction(SIGPIPE, &sigact, NULL);
 #else
 	SetConsoleCtrlHandler( (PHANDLER_ROUTINE) sighandler, TRUE );
+#endif
+
+#ifdef HAVE_MQTT
+    // Initialize MQTT if enabled
+    if (mqtt.enabled) {
+        init_mqtt_config();
+        if (init_mqtt() != 0) {
+            fprintf(stderr, "Failed to initialize MQTT client, continuing without MQTT support\n");
+            mqtt.enabled = 0;
+        }
+    }
 #endif
 
 	if (strcmp(filename, "-") == 0) { /* Write samples to stdout */
@@ -501,8 +726,15 @@ int main(int argc, char **argv)
 	if (file != stdout) {
 		fclose(file);}
 
+#ifdef HAVE_MQTT
+    // Clean up MQTT resources
+    if (mqtt.enabled) {
+        mqtt_cleanup();
+        cleanup_mqtt_config();
+    }
+#endif
+
 	rtlsdr_close(dev);
 	free(buffer);
 	return r >= 0 ? r : -r;
 }
-

@@ -116,10 +116,22 @@ target_link_libraries(rtl_eeprom rtlsdr convenience_static
     ${LIBUSB_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
 )
-target_link_libraries(rtl_adsb rtlsdr convenience_static
-    ${LIBUSB_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-)
+
+# Conditional MQTT support for rtl_adsb
+if(ENABLE_MQTT AND LIBMOSQUITTO_FOUND)
+    target_link_libraries(rtl_adsb rtlsdr convenience_static
+        ${LIBUSB_LIBRARIES}
+        ${CMAKE_THREAD_LIBS_INIT}
+        ${LIBMOSQUITTO_LIBRARIES}
+    )
+    target_include_directories(rtl_adsb PRIVATE ${LIBMOSQUITTO_INCLUDE_DIRS})
+else()
+    target_link_libraries(rtl_adsb rtlsdr convenience_static
+        ${LIBUSB_LIBRARIES}
+        ${CMAKE_THREAD_LIBS_INIT}
+    )
+endif()
+
 target_link_libraries(rtl_power rtlsdr convenience_static
     ${LIBUSB_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
