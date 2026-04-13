@@ -19,7 +19,7 @@
 ########################################################################
 # Project setup
 ########################################################################
-cmake_minimum_required(VERSION 3.7.2)
+cmake_minimum_required(VERSION 3.7.2...4.2.0)
 
 # workaround for https://gitlab.kitware.com/cmake/cmake/issues/16967
 if(${CMAKE_VERSION} VERSION_LESS "3.12.0")
@@ -46,7 +46,7 @@ include(CMakePackageConfigHelpers)
 # Set the version information here
 set(VERSION_INFO_MAJOR_VERSION 2) # increment major on api compatibility changes
 set(VERSION_INFO_MINOR_VERSION 0) # increment minor on feature-level changes
-set(VERSION_INFO_PATCH_VERSION 1) # increment patch for bug fixes and docs
+set(VERSION_INFO_PATCH_VERSION 2) # increment patch for bug fixes and docs
 include(Version) # setup version info
 
 ########################################################################
