@@ -1,3 +1,26 @@
+rtl-sdr (2.0.3) unstable; urgency=medium
+
+  [ Oliver Smith ]
+  * contrib/jenkins: fix running "make distcheck"
+
+  [ Ramon Smits ]
+  * Fix application hang on USB transfer errors
+
+  [ Steve Markgraf ]
+  * Use CMake <min>...<max> syntax to get rid of deprecation warnings
+  * debian: drop invalid kfreebsd build-dep, switch to pkgconf
+  * debian: fix AppStream metadata validation
+  * debian: add man page for rtl_biast
+  * debian: fix wrong program name in rtl_fm man page header
+
+  [ Joshua Grieve ]
+  * Make include relative to project for use with FetchContent
+
+  [ rtlsdrblog ]
+  * Add RTL-SDR Blog V4L Support
+
+ -- Steve Markgraf <steve@steve-m.de>  Wed, 12 Aug 2026 00:02:45 +0200
+
 rtl-sdr (2.0.2) unstable; urgency=medium
 
   [ Mikael Falkvidd ]
