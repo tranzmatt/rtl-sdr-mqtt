@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component>
-  <id>librtlsdr0</id>
-  <metadata_license>GPL-2+</metadata_license>
+  <id>org.osmocom.librtlsdr</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
   <name>librtlsdr0</name>
   <summary>Control of rtl-sdr radio receiver</summary>
   <description>
